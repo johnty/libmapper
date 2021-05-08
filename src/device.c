@@ -3,9 +3,16 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdarg.h>
+#ifdef _MSC_VER
+#include <windows.h>
+#include <malloc.h>
+#include "time.h"
+#else 
 #include <unistd.h>
+
+#endif
 #include <assert.h>
-#include <sys/time.h>
+
 #include <stddef.h>
 
 #include "mapper_internal.h"
