@@ -348,9 +348,7 @@ void mpr_map_free(mpr_map map);
 
 /**** Slot ****/
 
-mpr_slot mpr_slot_new(mpr_map map, mpr_sig sig, int is_src);
-
-void mpr_slot_init(mpr_slot slot);
+mpr_slot mpr_slot_new(mpr_map map, mpr_sig sig, unsigned char is_local, unsigned char is_src);
 
 void mpr_slot_alloc_values(mpr_local_slot slot, int num_inst, int hist_size);
 
@@ -513,11 +511,11 @@ int mpr_tbl_get_size(mpr_tbl tab);
  *  and fills in value if found. */
 mpr_tbl_record mpr_tbl_get(mpr_tbl tab, mpr_prop prop, const char *key);
 
-int mpr_tbl_get_prop_by_key(mpr_tbl tab, const char *key, int *len,
-                            mpr_type *type, const void **val, int *pub);
+mpr_prop mpr_tbl_get_prop_by_key(mpr_tbl tab, const char *key, int *len,
+                                 mpr_type *type, const void **val, int *pub);
 
-int mpr_tbl_get_prop_by_idx(mpr_tbl tab, mpr_prop prop, const char **key,
-                            int *len, mpr_type *type, const void **val, int *pub);
+mpr_prop mpr_tbl_get_prop_by_idx(mpr_tbl tab, mpr_prop prop, const char **key,
+                                 int *len, mpr_type *type, const void **val, int *pub);
 
 /*! Remove a key-value pair from a table (by index or name). */
 int mpr_tbl_remove(mpr_tbl tab, mpr_prop prop, const char *key, int flags);

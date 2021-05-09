@@ -123,7 +123,6 @@ void mpr_sig_init(mpr_sig sig, mpr_dir dir, const char *name, int len, mpr_type 
 
     sig->obj.type = MPR_SIG;
     sig->obj.props.synced = mpr_tbl_new();
-    sig->obj.props.mask = 0;
 
     tbl = sig->obj.props.synced;
     loc_mod = sig->is_local ? MODIFIABLE : NON_MODIFIABLE;
@@ -134,7 +133,7 @@ void mpr_sig_init(mpr_sig sig, mpr_dir dir, const char *name, int len, mpr_type 
                  LOCAL_MODIFY | INDIRECT | LOCAL_ACCESS_ONLY);
     mpr_tbl_link(tbl, PROP(DEV), 1, MPR_DEV, &sig->dev,
                  NON_MODIFIABLE | INDIRECT | LOCAL_ACCESS_ONLY);
-    mpr_tbl_link(tbl, PROP(DIR), 1, MPR_INT32, &sig->dir, rem_mod);
+    mpr_tbl_link(tbl, PROP(DIR), 1, MPR_INT32, &sig->dir, MODIFIABLE);
     mpr_tbl_link(tbl, PROP(ID), 1, MPR_INT64, &sig->obj.id, rem_mod);
     mpr_tbl_link(tbl, PROP(JITTER), 1, MPR_FLT, &sig->jitter, NON_MODIFIABLE);
     mpr_tbl_link(tbl, PROP(LEN), 1, MPR_INT32, &sig->len, rem_mod);
@@ -974,8 +973,10 @@ static int _add_idmap(mpr_local_sig lsig, mpr_sig_inst si, mpr_id_map map)
 void mpr_sig_send_state(mpr_sig sig, net_msg_t cmd)
 {
     char str[BUFFSIZE];
-    NEW_LO_MSG(msg, return);
+    lo_message msg;
     RETURN_UNLESS(sig);
+    msg = lo_message_new();
+    RETURN_UNLESS(msg);
 
     if (cmd == MSG_SIG_MOD) {
         lo_message_add_string(msg, sig->name);
@@ -994,7 +995,6 @@ void mpr_sig_send_state(mpr_sig sig, net_msg_t cmd)
 
         /* properties */
         mpr_tbl_add_to_msg(sig->is_local ? sig->obj.props.synced : 0, sig->obj.props.staged, msg);
-
         mpr_net_add_msg(&sig->obj.graph->net, 0, cmd, msg);
     }
 }
@@ -1023,6 +1023,8 @@ int mpr_sig_set_from_msg(mpr_sig sig, mpr_msg msg)
         switch (a->prop) {
             case PROP(DIR): {
                 int dir = 0;
+                if (!mpr_type_get_is_str(a->types[0]))
+                    break;
                 if (strcmp(&(*a->vals)->s, "output")==0)
                     dir = MPR_DIR_OUT;
                 else if (strcmp(&(*a->vals)->s, "input")==0)
@@ -1042,6 +1044,8 @@ int mpr_sig_set_from_msg(mpr_sig sig, mpr_msg msg)
                 break;
             case PROP(STEAL_MODE): {
                 int stl;
+                if (!mpr_type_get_is_str(a->types[0]))
+                    break;
                 if (strcmp(&(*a->vals)->s, "none")==0)
                     stl = MPR_STEAL_NONE;
                 else if (strcmp(&(*a->vals)->s, "oldest")==0)

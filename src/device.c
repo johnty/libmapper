@@ -58,7 +58,6 @@ void init_dev_prop_tbl(mpr_dev dev)
     mpr_tbl tbl;
     mpr_list qry;
 
-    dev->obj.props.mask = 0;
     dev->obj.props.synced = mpr_tbl_new();
     if (!dev->is_local)
         dev->obj.props.staged = mpr_tbl_new();
@@ -352,8 +351,7 @@ int mpr_dev_handler(const char *path, const char *types, lo_arg **argv, int argc
         map = slot->map;
         TRACE_DEV_RETURN_UNLESS(map->status >= MPR_STATUS_READY, 0, "error in mpr_dev_handler: "
                                 "mapping not yet ready.\n");
-        TRACE_DEV_RETURN_UNLESS(map->expr, 0, "error in mpr_dev_handler: missing expression.\n");
-        if (map->process_loc == MPR_LOC_DST) {
+        if (map->expr && !map->is_local_only) {
             vals = check_types(types, val_len, slot->sig->type, slot->sig->len);
             map_manages_inst = mpr_expr_get_manages_inst(map->expr);
         }
@@ -377,7 +375,7 @@ int mpr_dev_handler(const char *path, const char *types, lo_arg **argv, int argc
         idmap_idx = mpr_sig_get_idmap_with_GID(sig, GID, RELEASED_LOCALLY, ts, 0);
         if (idmap_idx < 0) {
             /* No instance found with this map – don't activate instance just to release it again */
-            RETURN_ARG_UNLESS(vals, 0);
+            RETURN_ARG_UNLESS(vals && sig->dir == MPR_DIR_IN, 0);
 
             if (map_manages_inst && vals == slot->sig->len) {
                 /* special case: do a dry-run to check whether this map will
@@ -391,7 +389,7 @@ int mpr_dev_handler(const char *path, const char *types, lo_arg **argv, int argc
                 v.type = slot->sig->type;
                 src = alloca(map->num_src * sizeof(mpr_value));
                 for (i = 0; i < map->num_src; i++)
-                    src[i] = (i == slot->obj.id) ? &v : 0;
+                    src[i] = (i == slot->id) ? &v : 0;
                 if (mpr_expr_eval(map->expr, src, 0, 0, 0, 0, 0) & EXPR_RELEASE_BEFORE_UPDATE)
                     return 0;
             }
@@ -426,10 +424,8 @@ int mpr_dev_handler(const char *path, const char *types, lo_arg **argv, int argc
     diff = mpr_time_get_diff(ts, si->time);
     idmap = sig->idmaps[idmap_idx].map;
 
-    size = mpr_type_get_size(slot ? slot->sig->type : sig->type);
-
+    size = mpr_type_get_size(map ? slot->sig->type : sig->type);
     if (vals == 0) {
-        int evt;
         if (GID) {
             /* TODO: mark SLOT status as remotely released rather than map */
             sig->idmaps[idmap_idx].status |= RELEASED_REMOTELY;
@@ -447,16 +443,22 @@ int mpr_dev_handler(const char *path, const char *types, lo_arg **argv, int argc
 
         /* Try to release instance, but do not call mpr_rtr_process_sig() here, since we don't
          * know if the local signal instance will actually be released. */
-        evt = MPR_SIG_REL_UPSTRM & sig->event_flags ? MPR_SIG_REL_UPSTRM : MPR_SIG_UPDATE;
-        mpr_sig_call_handler(sig, evt, idmap->LID, 0, 0, &ts, diff);
+        if (sig->dir == MPR_DIR_IN) {
+            int evt = (MPR_SIG_REL_UPSTRM & sig->event_flags) ? MPR_SIG_REL_UPSTRM : MPR_SIG_UPDATE;
+            mpr_sig_call_handler(sig, evt, idmap->LID, 0, 0, &ts, diff);
+        }
+        else if (MPR_SIG_REL_DNSTRM & sig->event_flags)
+            mpr_sig_call_handler(sig, MPR_SIG_REL_DNSTRM, idmap->LID, 0, 0, &ts, diff);
 
-        RETURN_ARG_UNLESS(map && MPR_LOC_DST == map->process_loc, 0);
+        RETURN_ARG_UNLESS(map && MPR_LOC_DST == map->process_loc && sig->dir == MPR_DIR_IN, 0);
 
         /* Reset memory for corresponding source slot. */
         /* TODO: make a function (reset) */
         mpr_value_reset_inst(&slot->val, inst_idx);
         return 0;
     }
+    else if (sig->dir == MPR_DIR_OUT)
+        return 0;
 
     /* Partial vector updates are not allowed in convergent maps since the slot value mirrors the
      * remote signal value. */
@@ -496,7 +498,7 @@ int mpr_dev_handler(const char *path, const char *types, lo_arg **argv, int argc
     }
 
     for (; idmap_idx < sig->idmap_len; idmap_idx++) {
-        /* check if map instance is active */
+        /* check if instance is active */
         if ((si = sig->idmaps[idmap_idx].inst)) {
             idmap = sig->idmaps[idmap_idx].map;
             for (i = 0; i < sig->len; i++) {
